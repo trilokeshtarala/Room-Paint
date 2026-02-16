@@ -25,53 +25,53 @@ IMAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 CATEGORIES = {
     "Bedroom": [
-        ("Light Blue", (230, 216, 173)),
-        ("Slate Blue", (205, 90, 106)),
-        ("Navy Blue", (128, 0, 0)),
-        ("Sage Green", (142, 188, 159)),
-        ("Silver", (192, 192, 192)),
-        ("Lavender", (230, 230, 250)),
-        ("Warm Gray", (169, 169, 169)),
-        ("Charcoal", (54, 54, 54)),
-        ("Crisp White", (255, 255, 255)),
-        ("Terracotta", (94, 114, 226)),
-        ("Rust", (67, 75, 183)),
-        ("Cream", (220, 245, 255))
+        ("Light Blue", (230, 216, 173)),       # Soft Sky Blue
+        ("Slate Blue", (205, 90, 106)),        # Muted Blue-Grey
+        ("Navy Blue", (128, 0, 0)),            # Dark Blue
+        ("Sage Green", (131, 193, 157)),       # Muted Earthy Green
+        ("Silver", (192, 192, 192)),           # Light Gray
+        ("Lavender", (250, 230, 230)),         # Pale Purple
+        ("Warm Gray", (169, 169, 169)),        # Greige
+        ("Charcoal", (64, 64, 64)),            # Dark Gray
+        ("Crisp White", (255, 255, 255)),      # Pure White
+        ("Terracotta", (91, 114, 226)),        # Clay Red
+        ("Rust", (20, 40, 180)),               # Deep Orange-Red
+        ("Cream", (208, 253, 255))             # Off-White
     ],
     "Kitchen": [
-        ("White", (255, 255, 255)),
-        ("Warm Yellow", (153, 228, 255)),
-        ("Red Accent", (50, 50, 220)),
-        ("Orange Accent", (0, 165, 255))
+        ("White", (255, 255, 255)),            # Standard White
+        ("Warm Yellow", (150, 230, 255)),      # Sunny Yellow
+        ("Red Accent", (50, 50, 220)),         # Bright Red
+        ("Orange Accent", (0, 165, 255))       # Vivid Orange
     ],
     "Hall/Living": [
-        ("Warm Beige", (200, 228, 245)),
-        ("Greige", (180, 180, 170)),
-        ("Soft Terracotta", (120, 140, 210)),
-        ("Earthy Ochre", (80, 160, 204)),
-        ("Green", (80, 180, 80)),
-        ("Charcoal Acc", (60, 60, 60))
+        ("Warm Beige", (210, 240, 245)),       # Sand Color
+        ("Greige", (170, 174, 168)),           # Gray-Beige
+        ("Soft Terracotta", (110, 130, 205)),  # Muted Clay
+        ("Earthy Ochre", (34, 119, 204)),      # Golden Brown
+        ("Green", (144, 238, 144)),            # Pale Green
+        ("Charcoal Acc", (50, 50, 50))         # Dark Trim
     ],
     "Bathroom": [
-        ("Crisp White", (250, 250, 250)),
-        ("Aqua", (255, 255, 0)),
-        ("Light Teal", (180, 180, 100)),
-        ("Charcoal", (70, 70, 70)),
-        ("Black Accent", (10, 10, 10))
+        ("Crisp White", (250, 250, 250)),      # Pure White
+        ("Aqua", (255, 255, 0)),               # Cyan
+        ("Light Teal", (170, 178, 32)),        # Blue-Green
+        ("Charcoal", (60, 60, 60)),            # Dark Gray
+        ("Black Accent", (10, 10, 10))         # Jet Black
     ],
     "Dining": [
-        ("Warm Red", (60, 60, 200)),
-        ("Aubergine", (80, 40, 70))
+        ("Warm Red", (34, 34, 178)),           # Deep Red
+        ("Aubergine", (71, 56, 75))            # Eggplant Purple
     ],
     "Office": [
-        ("Green", (100, 180, 100)),
-        ("Deep Blue", (150, 50, 10)),
-        ("Yellow Acc", (50, 220, 240))
+        ("Green", (87, 139, 34)),              # Forest Green
+        ("Deep Blue", (139, 0, 0)),            # Navy
+        ("Yellow Acc", (0, 215, 255))          # Gold
     ],
     "Gaming": [
-        ("Neutral Gray", (150, 150, 150)),
-        ("Matte Black", (25, 25, 25)),
-        ("White", (245, 245, 245))
+        ("Neutral Gray", (128, 128, 128)),     # Mid-Gray
+        ("Matte Black", (20, 20, 20)),         # Near Black
+        ("White", (240, 240, 240))             # Off-White
     ]
 }
 
