@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wall Color Changer v9</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        #compare-controls { display: flex; gap: 5px; justify-content: center; margin-top: 5px; }
+        .btn-mini { padding: 5px 10px; font-size: 0.8rem; border-radius: 4px; }
+        .hidden { display: none !important; }
+        
+        /* Zoom & Pan Controls */
+        #zoom-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+        .zoom-btn {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: 1px solid #555;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        /* Pan Toggle */
+        #mode-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            border: 1px solid #555;
+            cursor: pointer;
+            z-index: 100;
+            display: flex; gap: 5px; align-items: center;
+        }
+        #mode-toggle.pan-active { background: #00d1ff; color: black; border-color: #00d1ff; }
+        
+        #canvas-wrapper {
+            overflow: auto; /* Enable scrolling for zoom */
+            touch-action: none; /* We handle touches manually */
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <!-- Floating Controls -->
+        <div id="zoom-controls">
+            <button id="btn-zoom-in" class="zoom-btn">+</button>
+            <button id="btn-zoom-out" class="zoom-btn">-</button>
+            <button id="btn-zoom-reset" class="zoom-btn">&#x21ba;</button>
+        </div>
+        
+        <button id="mode-toggle">
+            <span id="mode-icon">&#x270eff;</span> <span id="mode-text">Draw</span>
+        </button>
+
+        <!-- Canvas Container -->
+        <div id="canvas-wrapper">
+            <canvas id="main-canvas"></canvas>
+            <div id="instruction-overlay">
+                <p>Tap points to outline walls.<br>Use "Move" mode to Pan/Zoom.</p>
+            </div>
+        </div>
+
+        <!-- Controls Panel -->
+        <div id="controls-panel">
+            <div class="phase-indicator">
+                <span id="phase-select" class="phase active">SELECT</span>
+                <span id="phase-recolor" class="phase">RECOLOR</span>
+            </div>
+
+            <!-- SELECT PHASE ACTIONS -->
+            <div id="select-actions" class="action-row">
+                <button id="btn-undo" class="btn secondary">Undo</button>
+                <button id="btn-add-poly" class="btn primary">Close Shape</button>
+                <button id="btn-finish" class="btn success">Done</button>
+            </div>
+
+            <!-- RECOLOR PHASE ACTIONS -->
+            <div id="recolor-actions" class="hidden">
+                 <div class="action-row">
+                    <button id="btn-reset" class="btn danger">Back</button>
+                    <button id="btn-compare-toggle" class="btn primary">Compare Mode</button>
+                    <button id="btn-save" class="btn success">Save</button>
+                 </div>
+                 <div id="compare-controls" class="hidden">
+                     <button id="btn-snapshot" class="btn btn-mini secondary">Snapshot &#8678;</button>
+                     <button id="btn-reset-ref" class="btn btn-mini danger">Reset Ref</button>
+                 </div>
+            </div>
+
+            <div id="category-nav" class="hidden">
+                <button id="btn-prev-cat" class="nav-btn">&lt;</button>
+                <span id="current-category">Bedroom</span>
+                <button id="btn-next-cat" class="nav-btn">&gt;</button>
+            </div>
+
+            <div id="palette-scroll" class="hidden">
+                <div id="color-container"></div>
+            </div>
+            
+             <div id="custom-picker-container" class="hidden">
+                <label for="custom-color">Custom:</label>
+                <input type="color" id="custom-color" value="#ffffff">
+            </div>
+
+            <input type="file" id="file-input" accept="image/*" style="display: none;">
+            <button id="btn-upload" class="floating-fab">+</button>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
