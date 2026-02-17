@@ -3,85 +3,160 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Dynamically recolor walls in any room photo. Upload an image, select walls, and see colors come to life.">
-    <title>Wall Color Changer</title>
+    <meta name="description" content="Visualize any wall color in your room. Upload a photo, outline walls, and try colors instantly.">
+    <title>RoomPaint — Visualize Wall Colors</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
 </head>
 <body>
-    <div id="app-container">
-        <!-- Floating Zoom Controls -->
-        <div id="zoom-controls">
-            <button id="btn-zoom-in" class="zoom-btn" title="Zoom In">+</button>
-            <button id="btn-zoom-out" class="zoom-btn" title="Zoom Out">&minus;</button>
-            <button id="btn-zoom-reset" class="zoom-btn" title="Reset Zoom">&#x21ba;</button>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- WELCOME SCREEN (Hero / Landing)                        -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div id="welcome-screen">
+        <div class="welcome-content">
+            <div class="logo">🎨</div>
+            <h1>RoomPaint</h1>
+            <p class="tagline">See any color on your walls — before you paint.</p>
+
+            <div id="drop-zone">
+                <div class="drop-icon">📷</div>
+                <p class="drop-main">Drag & drop a room photo here</p>
+                <p class="drop-sub">or</p>
+                <button id="btn-choose-file" class="btn-hero">Choose Photo</button>
+                <p class="drop-hint">JPG, PNG — works best with well-lit rooms</p>
+            </div>
+
+            <div class="how-it-works">
+                <h3>How it works</h3>
+                <div class="steps-row">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <div class="step-icon">📤</div>
+                        <p>Upload a room photo</p>
+                    </div>
+                    <div class="step-arrow">→</div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <div class="step-icon">✏️</div>
+                        <p>Outline the walls</p>
+                    </div>
+                    <div class="step-arrow">→</div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <div class="step-icon">🎨</div>
+                        <p>Pick colors & compare</p>
+                    </div>
+                </div>
+            </div>
         </div>
-        
-        <!-- Mode Toggle (Draw / Pan) -->
-        <button id="mode-toggle" title="Toggle between Draw and Pan mode">
-            <span id="mode-icon">✎</span>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- MAIN APP (hidden until image uploaded)                 -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div id="app-container" class="hidden">
+
+        <!-- STEP PROGRESS BAR (top) -->
+        <div id="step-bar">
+            <div class="step-pip active" data-step="1">
+                <span class="pip-num">1</span>
+                <span class="pip-label">Outline</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-pip" data-step="2">
+                <span class="pip-num">2</span>
+                <span class="pip-label">Color</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-pip" data-step="3">
+                <span class="pip-num">3</span>
+                <span class="pip-label">Save</span>
+            </div>
+        </div>
+
+        <!-- CONTEXTUAL TIP (animated bar below step bar) -->
+        <div id="tip-bar">
+            <span id="tip-icon">💡</span>
+            <span id="tip-text">Tap corners of a wall to outline it. Tap "Close Shape" when done with one wall.</span>
+        </div>
+
+        <!-- Floating Zoom/Pan controls -->
+        <div id="zoom-controls">
+            <button id="btn-zoom-in"    class="tool-btn" title="Zoom In">＋</button>
+            <button id="btn-zoom-out"   class="tool-btn" title="Zoom Out">－</button>
+            <button id="btn-zoom-reset" class="tool-btn" title="Reset Zoom">↺</button>
+        </div>
+
+        <button id="mode-toggle" title="Switch between Draw and Pan">
+            <span id="mode-icon">✏️</span>
             <span id="mode-text">Draw</span>
         </button>
 
-        <!-- Canvas Container -->
+        <!-- Canvas -->
         <div id="canvas-wrapper">
             <canvas id="main-canvas"></canvas>
-            <div id="instruction-overlay">
-                <p>Upload an image, then tap to outline walls.<br>Use <strong>Close Shape</strong> to finish each section.</p>
-            </div>
         </div>
 
-        <!-- Controls Panel -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- BOTTOM CONTROLS                                     -->
+        <!-- ═══════════════════════════════════════════════════ -->
         <div id="controls-panel">
-            <!-- Phase Indicator -->
-            <div class="phase-indicator">
-                <span id="phase-select" class="phase active">SELECT</span>
-                <span id="phase-recolor" class="phase">RECOLOR</span>
-            </div>
 
-            <!-- SELECT PHASE ACTIONS -->
+            <!-- SELECT actions -->
             <div id="select-actions" class="action-row">
-                <button id="btn-undo" class="btn secondary">Undo</button>
-                <button id="btn-add-poly" class="btn primary">Close Shape</button>
-                <button id="btn-finish" class="btn success">Done</button>
+                <button id="btn-undo"     class="btn icon-btn" title="Remove last point">↩ Undo</button>
+                <button id="btn-add-poly" class="btn primary"  title="Finish this wall shape">✓ Close Shape</button>
+                <button id="btn-finish"   class="btn success"  title="Move on to coloring">Done →</button>
             </div>
 
-            <!-- RECOLOR PHASE ACTIONS -->
+            <!-- RECOLOR actions -->
             <div id="recolor-actions" class="hidden">
                 <div class="action-row">
-                    <button id="btn-reset" class="btn danger">Back</button>
-                    <button id="btn-compare-toggle" class="btn primary">Compare</button>
-                    <button id="btn-save" class="btn success">Save</button>
+                    <button id="btn-back"           class="btn icon-btn" title="Start over">← Back</button>
+                    <button id="btn-compare-toggle" class="btn primary"  title="Compare side by side">⇔ Compare</button>
+                    <button id="btn-save"           class="btn success"  title="Download the result">💾 Save</button>
                 </div>
                 <div id="compare-controls" class="hidden">
-                    <button id="btn-snapshot" class="btn btn-mini secondary">Snapshot ⇐</button>
-                    <button id="btn-reset-ref" class="btn btn-mini danger">Reset Ref</button>
+                    <button id="btn-snapshot"  class="btn mini">📌 Snapshot</button>
+                    <button id="btn-reset-ref" class="btn mini danger-text">Reset Ref</button>
                 </div>
             </div>
 
-            <!-- Category Navigation -->
+            <!-- WALL SELECTOR (chips) -->
+            <div id="wall-chips" class="hidden"></div>
+
+            <!-- Category nav -->
             <div id="category-nav" class="hidden">
                 <button id="btn-prev-cat" class="nav-btn">‹</button>
                 <span id="current-category">Bedroom</span>
                 <button id="btn-next-cat" class="nav-btn">›</button>
             </div>
 
-            <!-- Color Palette -->
+            <!-- Palette -->
             <div id="palette-scroll" class="hidden">
                 <div id="color-container"></div>
             </div>
-            
-            <!-- Custom Color Picker -->
+
+            <!-- Custom picker -->
             <div id="custom-picker-container" class="hidden">
-                <label for="custom-color">Custom:</label>
+                <label for="custom-color">Custom color</label>
                 <input type="color" id="custom-color" value="#ffffff">
             </div>
 
-            <!-- File Upload -->
-            <input type="file" id="file-input" accept="image/*" style="display: none;">
-            <button id="btn-upload" class="floating-fab" title="Upload Image">+</button>
+            <!-- New image -->
+            <button id="btn-new-image" class="btn mini new-img-btn" title="Upload a different image">📷 New Image</button>
         </div>
     </div>
+
+    <!-- Toast container -->
+    <div id="toast-container"></div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="file-input" accept="image/*" style="display:none">
+
     <script src="app.js"></script>
 </body>
 </html>

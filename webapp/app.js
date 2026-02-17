@@ -1,114 +1,114 @@
+/* ═══════════════════════════════════════════════════════════
+   RoomPaint – app.js (Multi-Color Walls, Guided UX)
+   ═══════════════════════════════════════════════════════════ */
 
-// DOM Elements
-const canvas = document.getElementById('main-canvas');
+// ── DOM ──────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+const welcomeScreen = $('welcome-screen');
+const appContainer = $('app-container');
+const canvas = $('main-canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
-const wrapper = document.getElementById('canvas-wrapper');
-const fileInput = document.getElementById('file-input');
-const btnUpload = document.getElementById('btn-upload');
-const steps = {
-    select: document.getElementById('phase-select'),
-    recolor: document.getElementById('phase-recolor')
-};
+const wrapper = $('canvas-wrapper');
+const fileInput = $('file-input');
+const tipBar = $('tip-bar');
+const tipText = $('tip-text');
+const tipIcon = $('tip-icon');
+const stepBar = $('step-bar');
+const modeToggle = $('mode-toggle');
+const modeText = $('mode-text');
+const modeIcon = $('mode-icon');
+
 const panels = {
-    select: document.getElementById('select-actions'),
-    recolor: document.getElementById('recolor-actions'),
-    nav: document.getElementById('category-nav'),
-    palette: document.getElementById('palette-scroll'),
-    custom: document.getElementById('custom-picker-container'),
-    instruction: document.getElementById('instruction-overlay'),
-    compare: document.getElementById('compare-controls')
+    select: $('select-actions'),
+    recolor: $('recolor-actions'),
+    nav: $('category-nav'),
+    palette: $('palette-scroll'),
+    custom: $('custom-picker-container'),
+    compare: $('compare-controls'),
+    chips: $('wall-chips')
 };
 
-const btnZoomIn = document.getElementById('btn-zoom-in');
-const btnZoomOut = document.getElementById('btn-zoom-out');
-const btnZoomReset = document.getElementById('btn-zoom-reset');
-const modeToggle = document.getElementById('mode-toggle');
-const modeText = document.getElementById('mode-text');
-const modeIcon = document.getElementById('mode-icon');
-
-// State
+// ── State ────────────────────────────────────────────────
 let img = new Image();
 let originalImageData = null;
 let currentPoints = [];
-let walls = []; // Array of { points: [], color: null, mask: Uint8Array, id: number }
-let activeWallIndex = -1; // Index of wall being colored
+let walls = [];          // { points[], mask, color, id }
+let activeWallIndex = -1;
 let scale = 1;
-let isRecolorPhase = false;
+let phase = 'SELECT';   // SELECT | RECOLOR
+let zoomLevel = 1.0;
+let interactionMode = 'DRAW';
 
 // Compare
 let isCompareMode = false;
 let referenceImageData = null;
-let currentCompositeData = null; // The result of all colored walls combined
+let currentCompositeData = null;
 
-// Zoom
-let zoomLevel = 1.0;
-let interactionMode = "DRAW";
-
-// Categories (Expanded)
+// Categories
 const CATEGORIES = {
-    "Bedroom": [
-        ["Light Blue", "#add8e6"], ["Slate Blue", "#6a5acd"], ["Navy Blue", "#000080"],
-        ["Sage Green", "#8fbc8f"], ["Silver", "#c0c0c0"], ["Lavender", "#e6e6fa"],
-        ["Warm Gray", "#a9a9a9"], ["Charcoal", "#36454f"], ["Crisp White", "#ffffff"],
-        ["Terracotta", "#e2725b"], ["Rust", "#b7410e"], ["Cream", "#fffdd0"]
-    ],
-    "Kitchen": [
-        ["White", "#ffffff"], ["Warm Yellow", "#ffdb58"],
-        ["Red Accent", "#dc143c"], ["Orange", "#ffa500"]
-    ],
-    "Hall / Living": [
-        ["Warm Beige", "#f5f5dc"], ["Greige", "#cdcdd0"],
-        ["Soft Terracotta", "#cc4e5c"], ["Earthy Ochre", "#cc7722"],
-        ["Green", "#228b22"], ["Charcoal", "#333333"]
-    ],
-    "Bathroom": [
-        ["Crisp White", "#fafafa"], ["Aqua", "#00ffff"],
-        ["Light Teal", "#64b5a0"], ["Charcoal", "#464646"],
-        ["Black", "#0a0a0a"]
-    ],
-    "Dining": [
-        ["Warm Red", "#b22222"], ["Aubergine", "#4b0082"]
-    ],
-    "Office": [
-        ["Green", "#008000"], ["Deep Blue", "#00008b"], ["Yellow", "#ffff00"]
-    ],
-    "Gaming": [
-        ["Neutral Gray", "#808080"], ["Matte Black", "#1a1a1a"], ["White", "#f8f8f8"]
-    ]
+    "Bedroom": [["Light Blue", "#add8e6"], ["Slate Blue", "#6a5acd"], ["Navy", "#000080"], ["Sage Green", "#8fbc8f"], ["Silver", "#c0c0c0"], ["Lavender", "#e6e6fa"], ["Warm Gray", "#a9a9a9"], ["Charcoal", "#36454f"], ["White", "#ffffff"], ["Terracotta", "#e2725b"], ["Rust", "#b7410e"], ["Cream", "#fffdd0"]],
+    "Kitchen": [["White", "#ffffff"], ["Warm Yellow", "#ffdb58"], ["Red", "#dc143c"], ["Orange", "#ffa500"]],
+    "Hall/Living": [["Warm Beige", "#f5f5dc"], ["Greige", "#cdcdd0"], ["Terracotta", "#cc4e5c"], ["Ochre", "#cc7722"], ["Green", "#228b22"], ["Charcoal", "#333"]],
+    "Bathroom": [["White", "#fafafa"], ["Aqua", "#00ffff"], ["Teal", "#64b5a0"], ["Charcoal", "#464646"], ["Black", "#0a0a0a"]],
+    "Dining": [["Warm Red", "#b22222"], ["Aubergine", "#4b0082"]],
+    "Office": [["Green", "#008000"], ["Deep Blue", "#00008b"], ["Yellow", "#ffff00"]],
+    "Gaming": [["Gray", "#808080"], ["Matte Black", "#1a1a1a"], ["White", "#f8f8f8"]]
 };
 let currentCatIdx = 0;
 const catNames = Object.keys(CATEGORIES);
 
-// ─────────────────────────────────────────────────────────────
-// Init
-// ─────────────────────────────────────────────────────────────
-fileInput.addEventListener('change', handleImageUpload);
-btnUpload.addEventListener('click', () => fileInput.click());
 
-function handleImageUpload(e) {
+/* ═══════════════════════════════════════════════════════════
+   1. WELCOME & IMAGE UPLOAD
+   ═══════════════════════════════════════════════════════════ */
+
+// Choose File button
+$('btn-choose-file').addEventListener('click', () => fileInput.click());
+// New Image button inside app
+$('btn-new-image').addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', e => {
     if (!e.target.files.length) return;
+    loadImageFile(e.target.files[0]);
+});
+
+// Drag & Drop
+const dropZone = $('drop-zone');
+['dragenter', 'dragover'].forEach(ev =>
+    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag-over'); })
+);
+['dragleave', 'drop'].forEach(ev =>
+    dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); })
+);
+dropZone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) loadImageFile(file);
+});
+
+function loadImageFile(file) {
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = ev => {
         img = new Image();
-        img.onload = () => { initCanvas(); resetSelection(); };
+        img.onload = () => {
+            welcomeScreen.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            initCanvas();
+            enterSelectPhase();
+            toast('Image loaded — start outlining walls!');
+        };
         img.src = ev.target.result;
     };
-    reader.readAsDataURL(e.target.files[0]);
+    reader.readAsDataURL(file);
 }
 
 function initCanvas() {
-    zoomLevel = 1.0;
-    updateZoom();
-
+    zoomLevel = 1.0; updateZoom();
     const maxW = wrapper.clientWidth * 0.95;
     const maxH = wrapper.clientHeight * 0.92;
-    const scaleW = maxW / img.width;
-    const scaleH = maxH / img.height;
-    scale = Math.min(scaleW, scaleH, 1);
-
+    scale = Math.min(maxW / img.width, maxH / img.height, 1);
     canvas.width = Math.round(img.width * scale);
     canvas.height = Math.round(img.height * scale);
-
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -117,465 +117,426 @@ function initCanvas() {
     currentCompositeData = originalImageData;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Zoom & Pan
-// ─────────────────────────────────────────────────────────────
+
+/* ═══════════════════════════════════════════════════════════
+   2. STEP BAR & TIP HELPERS
+   ═══════════════════════════════════════════════════════════ */
+
+function setStep(n) {
+    const pips = stepBar.querySelectorAll('.step-pip');
+    const cons = stepBar.querySelectorAll('.step-connector');
+    pips.forEach((p, i) => {
+        p.classList.remove('active', 'done');
+        if (i + 1 < n) p.classList.add('done');
+        if (i + 1 === n) p.classList.add('active');
+    });
+    cons.forEach((c, i) => {
+        c.classList.toggle('done', i + 1 < n);
+    });
+}
+
+function setTip(icon, text) {
+    tipIcon.textContent = icon;
+    tipText.textContent = text;
+    tipBar.style.animation = 'none'; tipBar.offsetHeight;
+    tipBar.style.animation = 'slideDown .35s var(--ease)';
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   3. ZOOM & PAN
+   ═══════════════════════════════════════════════════════════ */
+
 function updateZoom() {
-    canvas.style.transformOrigin = "0 0";
+    canvas.style.transformOrigin = '0 0';
     canvas.style.transform = `scale(${zoomLevel})`;
 }
+$('btn-zoom-in').addEventListener('click', () => { zoomLevel = Math.min(zoomLevel * 1.25, 5); updateZoom(); });
+$('btn-zoom-out').addEventListener('click', () => { zoomLevel = Math.max(zoomLevel / 1.25, 1); updateZoom(); });
+$('btn-zoom-reset').addEventListener('click', () => { zoomLevel = 1; updateZoom(); wrapper.scrollLeft = wrapper.scrollTop = 0; });
 
-btnZoomIn.addEventListener('click', () => {
-    zoomLevel = Math.min(zoomLevel * 1.25, 5);
-    updateZoom();
-});
-btnZoomOut.addEventListener('click', () => {
-    zoomLevel = Math.max(zoomLevel / 1.25, 1);
-    updateZoom();
-});
-btnZoomReset.addEventListener('click', () => {
-    zoomLevel = 1.0;
-    updateZoom();
-    wrapper.scrollLeft = 0;
-    wrapper.scrollTop = 0;
-});
+modeToggle.addEventListener('click', () => setMode(interactionMode === 'DRAW' ? 'PAN' : 'DRAW'));
 
-modeToggle.addEventListener('click', () => {
-    setInteractionMode(interactionMode === "DRAW" ? "PAN" : "DRAW");
-});
-
-function setInteractionMode(mode) {
-    interactionMode = mode;
-    if (mode === "PAN") {
-        modeText.textContent = "Pan";
-        modeIcon.textContent = "✋";
-        modeToggle.classList.add('pan-active');
-        canvas.style.touchAction = "auto";
-        wrapper.style.touchAction = "auto";
-        canvas.style.cursor = "grab";
-    } else {
-        modeText.textContent = "Draw";
-        modeIcon.textContent = "✎";
-        modeToggle.classList.remove('pan-active');
-        canvas.style.touchAction = "none";
-        wrapper.style.touchAction = "none";
-        canvas.style.cursor = "crosshair";
-    }
+function setMode(m) {
+    interactionMode = m;
+    const isPan = m === 'PAN';
+    modeText.textContent = isPan ? 'Pan' : 'Draw';
+    modeIcon.textContent = isPan ? '✋' : '✏️';
+    modeToggle.classList.toggle('pan-active', isPan);
+    canvas.style.touchAction = wrapper.style.touchAction = isPan ? 'auto' : 'none';
+    canvas.style.cursor = isPan ? 'grab' : 'crosshair';
 }
-setInteractionMode("DRAW");
+setMode('DRAW');
 
-// ─────────────────────────────────────────────────────────────
-// Selection Logic (Phase 1)
-// ─────────────────────────────────────────────────────────────
-canvas.addEventListener('mousedown', handleInput);
-canvas.addEventListener('touchstart', handleInput, { passive: false });
 
-function handleInput(e) {
-    if (interactionMode === "PAN") return;
+/* ═══════════════════════════════════════════════════════════
+   4. CANVAS INPUT
+   ═══════════════════════════════════════════════════════════ */
+
+canvas.addEventListener('mousedown', onCanvasInput);
+canvas.addEventListener('touchstart', onCanvasInput, { passive: false });
+
+function onCanvasInput(e) {
+    if (interactionMode === 'PAN') return;
     if (e.cancelable) e.preventDefault();
 
     const rect = canvas.getBoundingClientRect();
     const cx = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
     const cy = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-
     const x = (cx - rect.left) * (canvas.width / rect.width);
     const y = (cy - rect.top) * (canvas.height / rect.height);
     if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) return;
 
-    // Phase 1: Creating Walls
-    if (!isRecolorPhase) {
+    if (phase === 'SELECT') {
         currentPoints.push({ x, y });
-        renderSelectionOverlay();
-        return;
+        renderSelection();
+
+        // Dynamic tips
+        if (currentPoints.length === 1) setTip('📍', 'Great! Keep tapping corners around the wall.');
+        if (currentPoints.length === 3) setTip('✅', 'You can tap "Close Shape" now, or keep adding points.');
     }
 
-    // Phase 2: Selecting Walls for Coloring
-    // Hit test walls
-    let clickedWallIndex = -1;
-    // Iterate backwards to select top-most if overlapping (though user ideally shouldn't overlap much)
-    for (let i = walls.length - 1; i >= 0; i--) {
-        if (isPointInPolygon({ x, y }, walls[i].points)) {
-            clickedWallIndex = i;
-            break;
-        }
-    }
-
-    if (clickedWallIndex !== -1) {
-        activeWallIndex = clickedWallIndex;
-        renderRecolorComposite(); // Re-render to show selection glow
-    } else {
-        // Deselect if clicked outside? Maybe keep selected to avoid accidental deselects.
-        // Or strictly strictly only select if clicked on wall.
-    }
-}
-
-// Point in Polygon (Ray casting alg)
-function isPointInPolygon(p, polygon) {
-    let isInside = false;
-    let minX = polygon[0].x, maxX = polygon[0].x;
-    let minY = polygon[0].y, maxY = polygon[0].y;
-    for (const n of polygon) {
-        minX = Math.min(n.x, minX);
-        maxX = Math.max(n.x, maxX);
-        minY = Math.min(n.y, minY);
-        maxY = Math.max(n.y, maxY);
-    }
-    if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
-        return false;
-    }
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        if (((polygon[i].y > p.y) !== (polygon[j].y > p.y)) &&
-            (p.x < (polygon[j].x - polygon[i].x) * (p.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x)) {
-            isInside = !isInside;
-        }
-    }
-    return isInside;
-}
-
-// ── Render Selection Phase ──────────────────────────────
-function renderSelectionOverlay() {
-    ctx.putImageData(originalImageData, 0, 0);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // Completed walls
-    for (const wall of walls) {
-        drawPolygon(wall.points, 'rgba(0,209,255,0.15)', 'rgba(0,209,255,0.5)', true);
-    }
-
-    // Active polygon being drawn
-    if (currentPoints.length > 0) {
-        drawPolygon(currentPoints, null, 'rgba(0,255,120,0.9)', false);
-        if (currentPoints.length > 2) {
-            ctx.setLineDash([6, 4]);
-            ctx.strokeStyle = 'rgba(255,255,0,0.5)';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.moveTo(currentPoints[currentPoints.length - 1].x, currentPoints[currentPoints.length - 1].y);
-            ctx.lineTo(currentPoints[0].x, currentPoints[0].y);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-        for (const p of currentPoints) {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-            ctx.fillStyle = '#ff4444'; ctx.fill();
+    if (phase === 'RECOLOR') {
+        // Hit-test walls
+        for (let i = walls.length - 1; i >= 0; i--) {
+            if (pointInPoly({ x, y }, walls[i].points)) {
+                selectWall(i);
+                return;
+            }
         }
     }
 }
 
-function drawPolygon(pts, fillColor, strokeColor, close) {
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    if (close) ctx.closePath();
-    if (fillColor) { ctx.fillStyle = fillColor; ctx.fill(); }
-    if (strokeColor) { ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke(); }
-}
 
-// ── Button Handlers ──────────────────────────────────────
-document.getElementById('btn-undo').addEventListener('click', () => {
-    if (currentPoints.length > 0) currentPoints.pop();
-    else if (walls.length > 0) {
-        walls.pop();
-        if (activeWallIndex >= walls.length) activeWallIndex = -1;
-    }
-    renderSelectionOverlay();
-});
+/* ═══════════════════════════════════════════════════════════
+   5. SELECT PHASE
+   ═══════════════════════════════════════════════════════════ */
 
-document.getElementById('btn-add-poly').addEventListener('click', () => {
-    if (currentPoints.length < 3) return;
-    addWallFromPoints(currentPoints);
-    currentPoints = [];
-    renderSelectionOverlay();
-});
-
-document.getElementById('btn-finish').addEventListener('click', () => {
-    if (currentPoints.length >= 3) {
-        addWallFromPoints(currentPoints);
-        currentPoints = [];
-    }
-    if (!walls.length) return alert("Select at least one wall!");
-
-    // Generate masks
-    walls.forEach(w => w.mask = createMaskForPolygon(w.points));
-
-    // Select first wall by default
-    activeWallIndex = 0;
-
-    enterRecolorPhase();
-});
-
-function addWallFromPoints(pts) {
-    walls.push({
-        id: Date.now() + Math.random(),
-        points: [...pts],
-        color: null, // hex string
-        mask: null // generated later
-    });
-}
-
-function createMaskForPolygon(points) {
-    const mc = document.createElement('canvas');
-    mc.width = canvas.width;
-    mc.height = canvas.height;
-    const m = mc.getContext('2d', { willReadFrequently: true });
-
-    m.fillStyle = '#000'; // logical 1 (we check for value > 0)
-    m.beginPath();
-    m.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) m.lineTo(points[i].x, points[i].y);
-    m.closePath();
-    m.fill();
-
-    const d = m.getImageData(0, 0, mc.width, mc.height).data;
-    const mask = new Uint8Array(mc.width * mc.height);
-    // Alpha channel is d[i*4+3] (255 if filled). Or we used fillStyle black which is r=0,g=0,b=0,a=255
-    // Wait, canvas is transparent by default. Filled pixels have alpha=255.
-
-    for (let i = 0; i < mask.length; i++) {
-        if (d[i * 4 + 3] > 128) mask[i] = 1;
-    }
-    return mask;
-}
-
-
-// ─────────────────────────────────────────────────────────────
-// Recolor Phase Logic
-// ─────────────────────────────────────────────────────────────
-function enterRecolorPhase() {
-    isRecolorPhase = true;
-    steps.select.classList.remove('active');
-    steps.recolor.classList.add('active');
-    panels.select.classList.add('hidden');
-    panels.instruction.classList.remove('hidden');
-    panels.instruction.innerHTML = "<p>Tap a wall to select it (glowing), then pick a color.<br>Each wall can be a different color!</p>";
-    panels.recolor.classList.remove('hidden');
-    panels.nav.classList.remove('hidden');
-    panels.palette.classList.remove('hidden');
-    panels.custom.classList.remove('hidden');
-    panels.compare.classList.add('hidden'); // Ensure hidden initially
-
-    // Make sure we are in pan mode for ease? Or keep user preference.
-    // Let's force Pan initially to avoid accidental wall selection? 
-    // No, Draw/Select mode is needed to click walls.
-    setInteractionMode("DRAW");
-
-    renderPalette();
-    renderRecolorComposite();
-}
-
-document.getElementById('btn-reset').addEventListener('click', resetSelection);
-
-function resetSelection() {
-    isRecolorPhase = false;
-    isCompareMode = false;
-    currentPoints = [];
+function enterSelectPhase() {
+    phase = 'SELECT';
     walls = [];
     activeWallIndex = -1;
-    originalImageData = null;
-    currentCompositeData = null;
+    currentPoints = [];
+    isCompareMode = false;
 
-    initCanvas();
-    steps.recolor.classList.remove('active');
-    steps.select.classList.add('active');
+    setStep(1);
+    setTip('✏️', 'Tap corners of a wall to outline it. Tap "Close Shape" when done with one wall.');
+
     panels.select.classList.remove('hidden');
-    panels.instruction.classList.remove('hidden');
-    panels.instruction.innerHTML = '<p>Upload an image, then tap to outline walls.<br>Use <strong>Close Shape</strong> to finish each section.</p>';
     panels.recolor.classList.add('hidden');
     panels.nav.classList.add('hidden');
     panels.palette.classList.add('hidden');
     panels.custom.classList.add('hidden');
     panels.compare.classList.add('hidden');
-    document.getElementById('btn-compare-toggle').textContent = "Compare";
-    setInteractionMode("DRAW");
+    panels.chips.classList.add('hidden');
+    $('btn-compare-toggle').textContent = '⇔ Compare';
+    setMode('DRAW');
+
+    renderSelection();
 }
 
-document.getElementById('btn-save').addEventListener('click', () => {
-    // Render clean without selection glow
-    renderRecolorComposite(false);
-    const a = document.createElement('a');
-    a.download = 'multi_wall_design.jpg';
-    a.href = canvas.toDataURL('image/jpeg', 0.92);
-    a.click();
-    // Restore selection glow
-    renderRecolorComposite(true);
+function renderSelection() {
+    ctx.putImageData(originalImageData, 0, 0);
+    ctx.lineCap = ctx.lineJoin = 'round';
+
+    // Completed walls (blue fill)
+    walls.forEach((w, i) => {
+        fillPoly(w.points, 'rgba(0,209,255,0.12)', 'rgba(0,209,255,0.45)');
+        // Label
+        const cx = w.points.reduce((s, p) => s + p.x, 0) / w.points.length;
+        const cy = w.points.reduce((s, p) => s + p.y, 0) / w.points.length;
+        ctx.font = '600 13px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(0,209,255,0.8)'; ctx.textAlign = 'center';
+        ctx.fillText(`Wall ${i + 1}`, cx, cy + 5);
+    });
+
+    // Active polygon being drawn (green)
+    if (currentPoints.length > 0) {
+        drawOutline(currentPoints, 'rgba(0,255,120,0.85)');
+        // Dashed close hint
+        if (currentPoints.length > 2) {
+            ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(255,255,0,0.5)'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(currentPoints.at(-1).x, currentPoints.at(-1).y);
+            ctx.lineTo(currentPoints[0].x, currentPoints[0].y); ctx.stroke(); ctx.setLineDash([]);
+        }
+        // Dots
+        currentPoints.forEach(p => {
+            ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,80,80,.25)'; ctx.fill();
+            ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff4444'; ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.stroke();
+        });
+    }
+}
+
+// Undo
+$('btn-undo').addEventListener('click', () => {
+    if (currentPoints.length > 0) { currentPoints.pop(); }
+    else if (walls.length > 0) { walls.pop(); toast(`Wall ${walls.length + 1} removed`); }
+    renderSelection();
 });
 
-// ── Compare ──────────────────────────────────────────────
-document.getElementById('btn-compare-toggle').addEventListener('click', () => {
+// Close Shape
+$('btn-add-poly').addEventListener('click', () => {
+    if (currentPoints.length < 3) { toast('Tap at least 3 points!'); return; }
+    walls.push({ id: Date.now(), points: [...currentPoints], color: null, mask: null });
+    toast(`Wall ${walls.length} added ✓`);
+    currentPoints = [];
+    setTip('➕', `${walls.length} wall(s) outlined. Outline more or tap "Done →".`);
+    renderSelection();
+});
+
+// Done
+$('btn-finish').addEventListener('click', () => {
+    if (currentPoints.length >= 3) {
+        walls.push({ id: Date.now(), points: [...currentPoints], color: null, mask: null });
+        currentPoints = [];
+    }
+    if (!walls.length) { toast('Outline at least one wall first!'); return; }
+    walls.forEach(w => w.mask = createMask(w.points));
+    activeWallIndex = 0;
+    enterRecolorPhase();
+});
+
+
+/* ═══════════════════════════════════════════════════════════
+   6. RECOLOR PHASE
+   ═══════════════════════════════════════════════════════════ */
+
+function enterRecolorPhase() {
+    phase = 'RECOLOR';
+    setStep(2);
+    setTip('🎨', 'Tap a wall (or a chip below) to select it, then pick a color!');
+
+    panels.select.classList.add('hidden');
+    panels.recolor.classList.remove('hidden');
+    panels.nav.classList.remove('hidden');
+    panels.palette.classList.remove('hidden');
+    panels.custom.classList.remove('hidden');
+    panels.chips.classList.remove('hidden');
+
+    renderWallChips();
+    renderPalette();
+    selectWall(0);
+}
+
+function selectWall(i) {
+    activeWallIndex = i;
+    renderWallChips();
+    renderRecolor();
+    const w = walls[i];
+    const label = w.color ? `Wall ${i + 1} — current: ${w.color}` : `Wall ${i + 1} — no color yet`;
+    setTip('👆', label + '. Pick a color below!');
+}
+
+function renderWallChips() {
+    const c = panels.chips;
+    c.innerHTML = '';
+    walls.forEach((w, i) => {
+        const chip = document.createElement('button');
+        chip.className = 'wall-chip' + (i === activeWallIndex ? ' active' : '');
+        chip.innerHTML = `<span class="chip-dot" style="background:${w.color || '#555'}"></span> Wall ${i + 1}`;
+        chip.onclick = () => selectWall(i);
+        c.appendChild(chip);
+    });
+}
+
+// Back
+$('btn-back').addEventListener('click', () => {
+    walls.forEach(w => { w.color = null; w.mask = null; });
+    enterSelectPhase();
+    initCanvas();
+    toast('Selection reset — re-outline your walls.');
+});
+
+// Save
+$('btn-save').addEventListener('click', () => {
+    renderRecolor(false); // Clean render (no glow)
+    setStep(3);
+    const a = document.createElement('a');
+    a.download = 'roompaint_design.jpg';
+    a.href = canvas.toDataURL('image/jpeg', 0.92);
+    a.click();
+    toast('Image saved! 🎉');
+    renderRecolor(); // Re-add glow
+});
+
+
+/* ═══════════════════════════════════════════════════════════
+   7. COMPARE MODE
+   ═══════════════════════════════════════════════════════════ */
+
+$('btn-compare-toggle').addEventListener('click', () => {
     isCompareMode = !isCompareMode;
-    const btn = document.getElementById('btn-compare-toggle');
+    const btn = $('btn-compare-toggle');
     if (isCompareMode) {
-        btn.textContent = "Exit Compare";
+        btn.textContent = '✕ Exit Compare';
         panels.compare.classList.remove('hidden');
-        zoomLevel = 1.0; updateZoom();
-        setInteractionMode("PAN");
-        renderCompareView();
+        zoomLevel = 1; updateZoom(); setMode('PAN');
+        renderCompare();
     } else {
-        btn.textContent = "Compare";
+        btn.textContent = '⇔ Compare';
         panels.compare.classList.add('hidden');
         canvas.width = originalImageData.width;
         canvas.height = originalImageData.height;
-        renderRecolorComposite();
+        renderRecolor();
     }
 });
 
-document.getElementById('btn-snapshot').addEventListener('click', () => {
+$('btn-snapshot').addEventListener('click', () => {
     if (!isCompareMode) return;
     referenceImageData = currentCompositeData;
-    renderCompareView();
+    toast('Snapshot saved to Reference panel');
+    renderCompare();
+});
+$('btn-reset-ref').addEventListener('click', () => {
+    if (!isCompareMode) return;
+    referenceImageData = originalImageData;
+    renderCompare();
 });
 
-document.getElementById('btn-reset-ref').addEventListener('click', () => {
-    if (!isCompareMode) return;
-    if (originalImageData) referenceImageData = originalImageData;
-    renderCompareView();
-});
-
-function renderCompareView() {
-    if (!isCompareMode) return;
+function renderCompare() {
     const w = originalImageData.width, h = originalImageData.height;
-    canvas.width = w * 2;
-    canvas.height = h;
-
+    canvas.width = w * 2; canvas.height = h;
     ctx.putImageData(referenceImageData, 0, 0);
     ctx.putImageData(currentCompositeData, w, 0);
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(w, 0); ctx.lineTo(w, h); ctx.stroke();
-
-    ctx.font = "600 20px 'Inter', sans-serif";
-    ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 6; ctx.fillStyle = '#fff';
-    ctx.fillText("Reference", 16, 36);
-    ctx.fillText("Active", w + 16, 36);
-    ctx.shadowBlur = 0;
+    // Divider
+    ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(w, 0); ctx.lineTo(w, h); ctx.stroke(); ctx.setLineDash([]);
+    // Labels
+    ctx.font = "600 18px 'Inter',sans-serif"; ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 5;
+    ctx.fillText('Reference', 14, 32); ctx.fillText('Active', w + 14, 32); ctx.shadowBlur = 0;
 }
 
-// ── Palette ──────────────────────────────────────────────
-document.getElementById('btn-prev-cat').addEventListener('click', () => {
-    currentCatIdx = (currentCatIdx - 1 + catNames.length) % catNames.length;
-    renderPalette();
-});
-document.getElementById('btn-next-cat').addEventListener('click', () => {
-    currentCatIdx = (currentCatIdx + 1) % catNames.length;
-    renderPalette();
-});
+
+/* ═══════════════════════════════════════════════════════════
+   8. PALETTE & COLOR PICKING
+   ═══════════════════════════════════════════════════════════ */
+
+$('btn-prev-cat').addEventListener('click', () => { currentCatIdx = (currentCatIdx - 1 + catNames.length) % catNames.length; renderPalette(); });
+$('btn-next-cat').addEventListener('click', () => { currentCatIdx = (currentCatIdx + 1) % catNames.length; renderPalette(); });
 
 function renderPalette() {
-    const name = catNames[currentCatIdx];
-    document.getElementById('current-category').textContent = name;
-    const c = document.getElementById('color-container');
+    $('current-category').textContent = catNames[currentCatIdx];
+    const c = $('color-container');
     c.innerHTML = '';
-    CATEGORIES[name].forEach(([colorName, hex]) => {
+    CATEGORIES[catNames[currentCatIdx]].forEach(([name, hex]) => {
         const d = document.createElement('div');
         d.className = 'swatch';
         d.style.backgroundColor = hex;
-        d.title = colorName;
+        d.setAttribute('data-name', name);
+        d.title = name;
         d.onclick = () => {
-            applyColorToActiveWall(hex);
+            c.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+            d.classList.add('selected');
+            applyColorToWall(hex);
         };
         c.appendChild(d);
     });
 }
-document.getElementById('custom-color').addEventListener('input', e => applyColorToActiveWall(e.target.value));
 
-// ─────────────────────────────────────────────────────────────
-// Multi-Wall Coloring Logic
-// ─────────────────────────────────────────────────────────────
-function applyColorToActiveWall(hex) {
-    if (activeWallIndex === -1 || !walls[activeWallIndex]) {
-        // Maybe alert user: "Please select a wall first"
-        // But for UX, if there's only 1 wall, we auto-selected it.
-        return;
-    }
+$('custom-color').addEventListener('input', e => applyColorToWall(e.target.value));
 
+
+/* ═══════════════════════════════════════════════════════════
+   9. MULTI-WALL RECOLOR ENGINE
+   ═══════════════════════════════════════════════════════════ */
+
+function applyColorToWall(hex) {
+    if (activeWallIndex < 0 || !walls[activeWallIndex]) { toast('Select a wall first!'); return; }
     walls[activeWallIndex].color = hex;
-    renderRecolorComposite();
+    renderWallChips();
+    renderRecolor();
 }
 
-
-function renderRecolorComposite(showSelection = true) {
-    // 1. Start with original
-    const out = new ImageData(
-        new Uint8ClampedArray(originalImageData.data),
-        originalImageData.width, originalImageData.height
-    );
+function renderRecolor(showGlow = true) {
+    const out = new ImageData(new Uint8ClampedArray(originalImageData.data), originalImageData.width, originalImageData.height);
     const d = out.data;
 
-    // 2. Iterate walls and apply color
-    // Optimization: We could merge masks where colors are same, but simple loop is robust.
     for (const wall of walls) {
         if (!wall.color || !wall.mask) continue;
-
-        const tr = parseInt(wall.color.slice(1, 3), 16);
-        const tg = parseInt(wall.color.slice(3, 5), 16);
-        const tb = parseInt(wall.color.slice(5, 7), 16);
-        const [tH, tS, tV] = rgbToHsv(tr, tg, tb);
-
+        const [tH, tS, tV] = hexToHsv(wall.color);
         for (let i = 0; i < wall.mask.length; i++) {
-            if (wall.mask[i] !== 1) continue;
-
+            if (!wall.mask[i]) continue;
             const idx = i * 4;
-            // Get pixel from *original* image (or acumulatively? Original is better to avoid degradation)
-            // But if walls overlap? Last one wins.
-
             let [h, s, v] = rgbToHsv(d[idx], d[idx + 1], d[idx + 2]);
-            h = tH;
-            s = tS;
-            // Preserving brightness/texture logic
+            h = tH; s = tS;
             if (tS < 0.1) { v = v * 0.3 + tV * 0.7; if (v > 1) v = 1; }
-
             const [nr, ng, nb] = hsvToRgb(h, s, v);
             d[idx] = nr; d[idx + 1] = ng; d[idx + 2] = nb;
         }
     }
 
     currentCompositeData = out;
-
-    if (isCompareMode) {
-        renderCompareView();
-        return;
-    }
-
-    // 3. Draw to canvas
-    if (canvas.width !== originalImageData.width) {
-        canvas.width = originalImageData.width;
-        canvas.height = originalImageData.height;
-    }
+    if (isCompareMode) { renderCompare(); return; }
+    if (canvas.width !== originalImageData.width) { canvas.width = originalImageData.width; canvas.height = originalImageData.height; }
     ctx.putImageData(out, 0, 0);
 
-    // 4. Draw Active Wall outline/glow
-    if (showSelection && isRecolorPhase && activeWallIndex !== -1 && walls[activeWallIndex]) {
-        const wall = walls[activeWallIndex];
-
-        ctx.save();
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-
-        // Glow
-        ctx.shadowColor = '#00ffea';
-        ctx.shadowBlur = 15;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.lineWidth = 3;
-
-        ctx.beginPath();
-        ctx.moveTo(wall.points[0].x, wall.points[0].y);
-        for (let i = 1; i < wall.points.length; i++) ctx.lineTo(wall.points[i].x, wall.points[i].y);
-        ctx.closePath();
-        ctx.stroke();
-
-        ctx.restore();
+    // Active wall glow
+    if (showGlow && activeWallIndex >= 0 && walls[activeWallIndex]) {
+        const w = walls[activeWallIndex];
+        ctx.save(); ctx.lineJoin = ctx.lineCap = 'round';
+        ctx.shadowColor = '#00ffea'; ctx.shadowBlur = 14;
+        ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(w.points[0].x, w.points[0].y);
+        w.points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.closePath(); ctx.stroke(); ctx.restore();
     }
 }
 
 
-// ── Utils ────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════
+   10. HELPERS
+   ═══════════════════════════════════════════════════════════ */
+
+function createMask(points) {
+    const mc = document.createElement('canvas');
+    mc.width = canvas.width; mc.height = canvas.height;
+    const m = mc.getContext('2d', { willReadFrequently: true });
+    m.fillStyle = '#000';
+    m.beginPath(); m.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) m.lineTo(points[i].x, points[i].y);
+    m.closePath(); m.fill();
+    const d = m.getImageData(0, 0, mc.width, mc.height).data;
+    const mask = new Uint8Array(mc.width * mc.height);
+    for (let i = 0; i < mask.length; i++) if (d[i * 4 + 3] > 128) mask[i] = 1;
+    return mask;
+}
+
+function fillPoly(pts, fill, stroke) {
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    pts.forEach(p => ctx.lineTo(p.x, p.y)); ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+}
+
+function drawOutline(pts, color) {
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.stroke();
+}
+
+function pointInPoly(p, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const yi = poly[i].y, yj = poly[j].y, xi = poly[i].x, xj = poly[j].x;
+        if ((yi > p.y) !== (yj > p.y) && p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi)
+            inside = !inside;
+    }
+    return inside;
+}
+
+function hexToHsv(hex) {
+    return rgbToHsv(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+}
+
 function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-    let h, s = mx === 0 ? 0 : d / mx, v = mx;
-    if (mx === mn) h = 0;
+    let h, s = mx ? d / mx : 0, v = mx;
+    if (!d) h = 0;
     else { switch (mx) { case r: h = (g - b) / d + (g < b ? 6 : 0); break; case g: h = (b - r) / d + 2; break; case b: h = (r - g) / d + 4; break; } h /= 6; }
     return [h, s, v];
 }
@@ -584,4 +545,12 @@ function hsvToRgb(h, s, v) {
     let r, g, b; const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
     switch (i % 6) { case 0: r = v; g = t; b = p; break; case 1: r = q; g = v; b = p; break; case 2: r = p; g = v; b = t; break; case 3: r = p; g = q; b = v; break; case 4: r = t; g = p; b = v; break; case 5: r = v; g = p; b = q; break; }
     return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+// ── Toast ────────────────────────────────────────────────
+function toast(msg, ms = 2500) {
+    const t = document.createElement('div');
+    t.className = 'toast'; t.textContent = msg;
+    $('toast-container').appendChild(t);
+    setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ms);
 }
