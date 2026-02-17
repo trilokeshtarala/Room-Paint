@@ -82,6 +82,16 @@ html, body {
 .drop-sub  { color: var(--text3); font-size: .85rem; margin: 8px 0; }
 .drop-hint { color: var(--text3); font-size: .75rem; margin-top: 12px; }
 
+.btn-load-welcome {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 16px; padding: 10px 22px;
+    background: var(--glass); border: 1px solid var(--border);
+    color: var(--text2); border-radius: var(--r-lg);
+    font-family: inherit; font-weight: 500; font-size: .88rem;
+    cursor: pointer; transition: all .2s var(--ease);
+}
+.btn-load-welcome:hover { background: var(--glass-hover); color: var(--text); border-color: var(--border-on); }
+
 .btn-hero {
     background: linear-gradient(135deg, #0088cc, var(--accent));
     color: #fff; border: none;

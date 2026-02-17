@@ -554,3 +554,88 @@ function toast(msg, ms = 2500) {
     $('toast-container').appendChild(t);
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ms);
 }
+
+
+/* ═══════════════════════════════════════════════════════════
+   11. SAVE / LOAD PROJECT (.roompaint)
+   ═══════════════════════════════════════════════════════════ */
+
+const projectInput = $('project-input');
+
+// Wire up buttons
+$('btn-save-project').addEventListener('click', saveProject);
+$('btn-load-project').addEventListener('click', () => projectInput.click());
+$('btn-load-project-welcome').addEventListener('click', () => projectInput.click());
+projectInput.addEventListener('change', e => {
+    if (!e.target.files.length) return;
+    loadProject(e.target.files[0]);
+    e.target.value = ''; // allow re-selecting same file
+});
+
+function saveProject() {
+    // Build a lightweight JSON bundle
+    const project = {
+        version: 1,
+        image: img.src, // data URI of original image
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        scale: scale,
+        walls: walls.map(w => ({
+            id: w.id,
+            points: w.points,   // [{x, y}, ...]
+            color: w.color      // hex string or null
+        }))
+    };
+
+    const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = 'my_room.roompaint';
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Project saved! Load it anytime to continue. 📂');
+}
+
+function loadProject(file) {
+    const reader = new FileReader();
+    reader.onload = ev => {
+        try {
+            const project = JSON.parse(ev.target.result);
+            if (!project.image || !project.walls) {
+                toast('Invalid project file!');
+                return;
+            }
+            restoreProject(project);
+        } catch (err) {
+            toast('Could not read project file.');
+            console.error(err);
+        }
+    };
+    reader.readAsText(file);
+}
+
+function restoreProject(project) {
+    img = new Image();
+    img.onload = () => {
+        // Show app
+        welcomeScreen.classList.add('hidden');
+        appContainer.classList.remove('hidden');
+
+        // Init canvas
+        initCanvas();
+
+        // Restore walls (points + colors, regenerate masks)
+        walls = project.walls.map(w => ({
+            id: w.id || Date.now() + Math.random(),
+            points: w.points,
+            color: w.color,
+            mask: createMask(w.points) // regenerate from polygon
+        }));
+
+        activeWallIndex = 0;
+        enterRecolorPhase();
+        toast(`Project loaded — ${walls.length} wall(s) restored! 🎨`);
+    };
+    img.src = project.image;
+}

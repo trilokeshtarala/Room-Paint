@@ -29,6 +29,8 @@
                 <p class="drop-hint">JPG, PNG — works best with well-lit rooms</p>
             </div>
 
+            <button id="btn-load-project-welcome" class="btn-load-welcome">📂 Load a Previous Project</button>
+
             <div class="how-it-works">
                 <h3>How it works</h3>
                 <div class="steps-row">
@@ -119,6 +121,10 @@
                     <button id="btn-compare-toggle" class="btn primary"  title="Compare side by side">⇔ Compare</button>
                     <button id="btn-save"           class="btn success"  title="Download the result">💾 Save</button>
                 </div>
+                <div class="action-row" style="margin-top:4px">
+                    <button id="btn-save-project" class="btn mini" title="Save walls + colors for later">📂 Save Project</button>
+                    <button id="btn-load-project" class="btn mini" title="Load a previous project">📥 Load Project</button>
+                </div>
                 <div id="compare-controls" class="hidden">
                     <button id="btn-snapshot"  class="btn mini">📌 Snapshot</button>
                     <button id="btn-reset-ref" class="btn mini danger-text">Reset Ref</button>
@@ -154,8 +160,9 @@
     <!-- Toast container -->
     <div id="toast-container"></div>
 
-    <!-- Hidden file input -->
+    <!-- Hidden file inputs -->
     <input type="file" id="file-input" accept="image/*" style="display:none">
+    <input type="file" id="project-input" accept=".roompaint" style="display:none">
 
     <script src="app.js"></script>
 </body>
