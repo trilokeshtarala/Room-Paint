@@ -30,15 +30,15 @@ const modeIcon = document.getElementById('mode-icon');
 let img = new Image();
 let originalImageData = null;
 let currentPoints = [];
-let completedPolygons = [];
-let maskData = null;
+let walls = []; // Array of { points: [], color: null, mask: Uint8Array, id: number }
+let activeWallIndex = -1; // Index of wall being colored
 let scale = 1;
 let isRecolorPhase = false;
 
 // Compare
 let isCompareMode = false;
 let referenceImageData = null;
-let activeRecoloredData = null;
+let currentCompositeData = null; // The result of all colored walls combined
 
 // Zoom
 let zoomLevel = 1.0;
@@ -114,6 +114,7 @@ function initCanvas() {
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     referenceImageData = originalImageData;
+    currentCompositeData = originalImageData;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -164,13 +165,13 @@ function setInteractionMode(mode) {
 setInteractionMode("DRAW");
 
 // ─────────────────────────────────────────────────────────────
-// Selection Logic
+// Selection Logic (Phase 1)
 // ─────────────────────────────────────────────────────────────
 canvas.addEventListener('mousedown', handleInput);
 canvas.addEventListener('touchstart', handleInput, { passive: false });
 
 function handleInput(e) {
-    if (interactionMode === "PAN" || isRecolorPhase) return;
+    if (interactionMode === "PAN") return;
     if (e.cancelable) e.preventDefault();
 
     const rect = canvas.getBoundingClientRect();
@@ -181,27 +182,70 @@ function handleInput(e) {
     const y = (cy - rect.top) * (canvas.height / rect.height);
     if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) return;
 
-    currentPoints.push({ x, y });
-    renderSelection();
+    // Phase 1: Creating Walls
+    if (!isRecolorPhase) {
+        currentPoints.push({ x, y });
+        renderSelectionOverlay();
+        return;
+    }
+
+    // Phase 2: Selecting Walls for Coloring
+    // Hit test walls
+    let clickedWallIndex = -1;
+    // Iterate backwards to select top-most if overlapping (though user ideally shouldn't overlap much)
+    for (let i = walls.length - 1; i >= 0; i--) {
+        if (isPointInPolygon({ x, y }, walls[i].points)) {
+            clickedWallIndex = i;
+            break;
+        }
+    }
+
+    if (clickedWallIndex !== -1) {
+        activeWallIndex = clickedWallIndex;
+        renderRecolorComposite(); // Re-render to show selection glow
+    } else {
+        // Deselect if clicked outside? Maybe keep selected to avoid accidental deselects.
+        // Or strictly strictly only select if clicked on wall.
+    }
 }
 
-// ── Smooth Canvas Rendering ──────────────────────────────
-function renderSelection() {
+// Point in Polygon (Ray casting alg)
+function isPointInPolygon(p, polygon) {
+    let isInside = false;
+    let minX = polygon[0].x, maxX = polygon[0].x;
+    let minY = polygon[0].y, maxY = polygon[0].y;
+    for (const n of polygon) {
+        minX = Math.min(n.x, minX);
+        maxX = Math.max(n.x, maxX);
+        minY = Math.min(n.y, minY);
+        maxY = Math.max(n.y, maxY);
+    }
+    if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
+        return false;
+    }
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        if (((polygon[i].y > p.y) !== (polygon[j].y > p.y)) &&
+            (p.x < (polygon[j].x - polygon[i].x) * (p.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x)) {
+            isInside = !isInside;
+        }
+    }
+    return isInside;
+}
+
+// ── Render Selection Phase ──────────────────────────────
+function renderSelectionOverlay() {
     ctx.putImageData(originalImageData, 0, 0);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Completed polygons — semi-transparent teal fill
-    for (const poly of completedPolygons) {
-        if (poly.length < 3) continue;
-        drawPolygon(poly, 'rgba(0,209,255,0.18)', 'rgba(0,209,255,0.7)', true);
+    // Completed walls
+    for (const wall of walls) {
+        drawPolygon(wall.points, 'rgba(0,209,255,0.15)', 'rgba(0,209,255,0.5)', true);
     }
 
-    // Active polygon — bright green outline
+    // Active polygon being drawn
     if (currentPoints.length > 0) {
         drawPolygon(currentPoints, null, 'rgba(0,255,120,0.9)', false);
-
-        // Close-hint line (dashed)
         if (currentPoints.length > 2) {
             ctx.setLineDash([6, 4]);
             ctx.strokeStyle = 'rgba(255,255,0,0.5)';
@@ -212,22 +256,9 @@ function renderSelection() {
             ctx.stroke();
             ctx.setLineDash([]);
         }
-
-        // Draw points with glow
         for (const p of currentPoints) {
-            // Glow
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 80, 80, 0.25)';
-            ctx.fill();
-            // Dot
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-            ctx.fillStyle = '#ff4444';
-            ctx.fill();
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
+            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff4444'; ctx.fill();
         }
     }
 }
@@ -237,70 +268,100 @@ function drawPolygon(pts, fillColor, strokeColor, close) {
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     if (close) ctx.closePath();
-
     if (fillColor) { ctx.fillStyle = fillColor; ctx.fill(); }
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
+    if (strokeColor) { ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke(); }
 }
 
 // ── Button Handlers ──────────────────────────────────────
 document.getElementById('btn-undo').addEventListener('click', () => {
     if (currentPoints.length > 0) currentPoints.pop();
-    else if (completedPolygons.length > 0) currentPoints = completedPolygons.pop();
-    renderSelection();
+    else if (walls.length > 0) {
+        walls.pop();
+        if (activeWallIndex >= walls.length) activeWallIndex = -1;
+    }
+    renderSelectionOverlay();
 });
 
 document.getElementById('btn-add-poly').addEventListener('click', () => {
     if (currentPoints.length < 3) return;
-    completedPolygons.push([...currentPoints]);
+    addWallFromPoints(currentPoints);
     currentPoints = [];
-    renderSelection();
+    renderSelectionOverlay();
 });
 
 document.getElementById('btn-finish').addEventListener('click', () => {
     if (currentPoints.length >= 3) {
-        completedPolygons.push([...currentPoints]);
+        addWallFromPoints(currentPoints);
         currentPoints = [];
     }
-    if (!completedPolygons.length) return alert("Select at least one wall!");
-    createMask();
+    if (!walls.length) return alert("Select at least one wall!");
+
+    // Generate masks
+    walls.forEach(w => w.mask = createMaskForPolygon(w.points));
+
+    // Select first wall by default
+    activeWallIndex = 0;
+
     enterRecolorPhase();
 });
 
-function createMask() {
+function addWallFromPoints(pts) {
+    walls.push({
+        id: Date.now() + Math.random(),
+        points: [...pts],
+        color: null, // hex string
+        mask: null // generated later
+    });
+}
+
+function createMaskForPolygon(points) {
     const mc = document.createElement('canvas');
     mc.width = canvas.width;
     mc.height = canvas.height;
     const m = mc.getContext('2d', { willReadFrequently: true });
-    m.fillStyle = '#FFF';
-    for (const poly of completedPolygons) {
-        m.beginPath();
-        m.moveTo(poly[0].x, poly[0].y);
-        for (let i = 1; i < poly.length; i++) m.lineTo(poly[i].x, poly[i].y);
-        m.closePath();
-        m.fill();
-    }
+
+    m.fillStyle = '#000'; // logical 1 (we check for value > 0)
+    m.beginPath();
+    m.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) m.lineTo(points[i].x, points[i].y);
+    m.closePath();
+    m.fill();
+
     const d = m.getImageData(0, 0, mc.width, mc.height).data;
-    maskData = new Uint8Array(mc.width * mc.height);
-    for (let i = 0; i < maskData.length; i++) if (d[i * 4] > 128) maskData[i] = 1;
+    const mask = new Uint8Array(mc.width * mc.height);
+    // Alpha channel is d[i*4+3] (255 if filled). Or we used fillStyle black which is r=0,g=0,b=0,a=255
+    // Wait, canvas is transparent by default. Filled pixels have alpha=255.
+
+    for (let i = 0; i < mask.length; i++) {
+        if (d[i * 4 + 3] > 128) mask[i] = 1;
+    }
+    return mask;
 }
 
+
 // ─────────────────────────────────────────────────────────────
-// Recolor Phase
+// Recolor Phase Logic
 // ─────────────────────────────────────────────────────────────
 function enterRecolorPhase() {
     isRecolorPhase = true;
     steps.select.classList.remove('active');
     steps.recolor.classList.add('active');
     panels.select.classList.add('hidden');
-    panels.instruction.classList.add('hidden');
+    panels.instruction.classList.remove('hidden');
+    panels.instruction.innerHTML = "<p>Tap a wall to select it (glowing), then pick a color.<br>Each wall can be a different color!</p>";
     panels.recolor.classList.remove('hidden');
     panels.nav.classList.remove('hidden');
     panels.palette.classList.remove('hidden');
     panels.custom.classList.remove('hidden');
+    panels.compare.classList.add('hidden'); // Ensure hidden initially
+
+    // Make sure we are in pan mode for ease? Or keep user preference.
+    // Let's force Pan initially to avoid accidental wall selection? 
+    // No, Draw/Select mode is needed to click walls.
+    setInteractionMode("DRAW");
+
     renderPalette();
-    activeRecoloredData = originalImageData;
+    renderRecolorComposite();
 }
 
 document.getElementById('btn-reset').addEventListener('click', resetSelection);
@@ -309,14 +370,17 @@ function resetSelection() {
     isRecolorPhase = false;
     isCompareMode = false;
     currentPoints = [];
-    completedPolygons = [];
-    maskData = null;
+    walls = [];
+    activeWallIndex = -1;
     originalImageData = null;
+    currentCompositeData = null;
+
     initCanvas();
     steps.recolor.classList.remove('active');
     steps.select.classList.add('active');
     panels.select.classList.remove('hidden');
     panels.instruction.classList.remove('hidden');
+    panels.instruction.innerHTML = '<p>Upload an image, then tap to outline walls.<br>Use <strong>Close Shape</strong> to finish each section.</p>';
     panels.recolor.classList.add('hidden');
     panels.nav.classList.add('hidden');
     panels.palette.classList.add('hidden');
@@ -327,13 +391,17 @@ function resetSelection() {
 }
 
 document.getElementById('btn-save').addEventListener('click', () => {
+    // Render clean without selection glow
+    renderRecolorComposite(false);
     const a = document.createElement('a');
-    a.download = 'wall_design.jpg';
+    a.download = 'multi_wall_design.jpg';
     a.href = canvas.toDataURL('image/jpeg', 0.92);
     a.click();
+    // Restore selection glow
+    renderRecolorComposite(true);
 });
 
-// ── Compare Mode ─────────────────────────────────────────
+// ── Compare ──────────────────────────────────────────────
 document.getElementById('btn-compare-toggle').addEventListener('click', () => {
     isCompareMode = !isCompareMode;
     const btn = document.getElementById('btn-compare-toggle');
@@ -348,19 +416,19 @@ document.getElementById('btn-compare-toggle').addEventListener('click', () => {
         panels.compare.classList.add('hidden');
         canvas.width = originalImageData.width;
         canvas.height = originalImageData.height;
-        ctx.putImageData(activeRecoloredData, 0, 0);
+        renderRecolorComposite();
     }
 });
 
 document.getElementById('btn-snapshot').addEventListener('click', () => {
     if (!isCompareMode) return;
-    referenceImageData = activeRecoloredData;
+    referenceImageData = currentCompositeData;
     renderCompareView();
 });
 
 document.getElementById('btn-reset-ref').addEventListener('click', () => {
     if (!isCompareMode) return;
-    referenceImageData = originalImageData;
+    if (originalImageData) referenceImageData = originalImageData;
     renderCompareView();
 });
 
@@ -371,20 +439,14 @@ function renderCompareView() {
     canvas.height = h;
 
     ctx.putImageData(referenceImageData, 0, 0);
-    ctx.putImageData(activeRecoloredData, w, 0);
+    ctx.putImageData(currentCompositeData, w, 0);
 
-    // Separator
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.lineWidth = 2;
-    ctx.setLineDash([8, 6]);
     ctx.beginPath(); ctx.moveTo(w, 0); ctx.lineTo(w, h); ctx.stroke();
-    ctx.setLineDash([]);
 
-    // Labels
     ctx.font = "600 20px 'Inter', sans-serif";
-    ctx.shadowColor = 'rgba(0,0,0,0.7)';
-    ctx.shadowBlur = 6;
-    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 6; ctx.fillStyle = '#fff';
     ctx.fillText("Reference", 16, 36);
     ctx.fillText("Active", w + 16, 36);
     ctx.shadowBlur = 0;
@@ -410,54 +472,105 @@ function renderPalette() {
         d.className = 'swatch';
         d.style.backgroundColor = hex;
         d.title = colorName;
-        d.setAttribute('aria-label', colorName);
         d.onclick = () => {
-            document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
-            d.classList.add('selected');
-            applyColor(hex);
+            applyColorToActiveWall(hex);
         };
         c.appendChild(d);
     });
 }
-
-document.getElementById('custom-color').addEventListener('input', e => applyColor(e.target.value));
+document.getElementById('custom-color').addEventListener('input', e => applyColorToActiveWall(e.target.value));
 
 // ─────────────────────────────────────────────────────────────
-// Recolor Engine (HSV)
+// Multi-Wall Coloring Logic
 // ─────────────────────────────────────────────────────────────
-function applyColor(hex) {
-    if (!maskData) return;
-    const tr = parseInt(hex.slice(1, 3), 16);
-    const tg = parseInt(hex.slice(3, 5), 16);
-    const tb = parseInt(hex.slice(5, 7), 16);
-    const [tH, tS, tV] = rgbToHsv(tr, tg, tb);
+function applyColorToActiveWall(hex) {
+    if (activeWallIndex === -1 || !walls[activeWallIndex]) {
+        // Maybe alert user: "Please select a wall first"
+        // But for UX, if there's only 1 wall, we auto-selected it.
+        return;
+    }
 
+    walls[activeWallIndex].color = hex;
+    renderRecolorComposite();
+}
+
+
+function renderRecolorComposite(showSelection = true) {
+    // 1. Start with original
     const out = new ImageData(
         new Uint8ClampedArray(originalImageData.data),
         originalImageData.width, originalImageData.height
     );
     const d = out.data;
 
-    for (let i = 0; i < maskData.length; i++) {
-        if (maskData[i] !== 1) continue;
-        const idx = i * 4;
-        let [h, s, v] = rgbToHsv(d[idx], d[idx + 1], d[idx + 2]);
-        h = tH; s = tS;
-        if (tS < 0.1) { v = v * 0.3 + tV * 0.7; if (v > 1) v = 1; }
-        const [nr, ng, nb] = hsvToRgb(h, s, v);
-        d[idx] = nr; d[idx + 1] = ng; d[idx + 2] = nb;
+    // 2. Iterate walls and apply color
+    // Optimization: We could merge masks where colors are same, but simple loop is robust.
+    for (const wall of walls) {
+        if (!wall.color || !wall.mask) continue;
+
+        const tr = parseInt(wall.color.slice(1, 3), 16);
+        const tg = parseInt(wall.color.slice(3, 5), 16);
+        const tb = parseInt(wall.color.slice(5, 7), 16);
+        const [tH, tS, tV] = rgbToHsv(tr, tg, tb);
+
+        for (let i = 0; i < wall.mask.length; i++) {
+            if (wall.mask[i] !== 1) continue;
+
+            const idx = i * 4;
+            // Get pixel from *original* image (or acumulatively? Original is better to avoid degradation)
+            // But if walls overlap? Last one wins.
+
+            let [h, s, v] = rgbToHsv(d[idx], d[idx + 1], d[idx + 2]);
+            h = tH;
+            s = tS;
+            // Preserving brightness/texture logic
+            if (tS < 0.1) { v = v * 0.3 + tV * 0.7; if (v > 1) v = 1; }
+
+            const [nr, ng, nb] = hsvToRgb(h, s, v);
+            d[idx] = nr; d[idx + 1] = ng; d[idx + 2] = nb;
+        }
     }
 
-    activeRecoloredData = out;
-    if (isCompareMode) { renderCompareView(); return; }
+    currentCompositeData = out;
+
+    if (isCompareMode) {
+        renderCompareView();
+        return;
+    }
+
+    // 3. Draw to canvas
     if (canvas.width !== originalImageData.width) {
         canvas.width = originalImageData.width;
         canvas.height = originalImageData.height;
     }
     ctx.putImageData(out, 0, 0);
+
+    // 4. Draw Active Wall outline/glow
+    if (showSelection && isRecolorPhase && activeWallIndex !== -1 && walls[activeWallIndex]) {
+        const wall = walls[activeWallIndex];
+
+        ctx.save();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        // Glow
+        ctx.shadowColor = '#00ffea';
+        ctx.shadowBlur = 15;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 3;
+
+        ctx.beginPath();
+        ctx.moveTo(wall.points[0].x, wall.points[0].y);
+        for (let i = 1; i < wall.points.length; i++) ctx.lineTo(wall.points[i].x, wall.points[i].y);
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.restore();
+    }
 }
 
-// ── Color Space Utils ────────────────────────────────────
+
+// ── Utils ────────────────────────────────────────────────
 function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
