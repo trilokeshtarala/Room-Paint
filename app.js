@@ -1,5 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
-   RoomPaint – app.js (Multi-Color Walls, Guided UX)
+   RoomPaint – app.js
+   Multi-Color Walls · Save/Load Project · Draggable Points
+   Pinch-to-Zoom · Guided UX
    ═══════════════════════════════════════════════════════════ */
 
 // ── DOM ──────────────────────────────────────────────────
@@ -11,6 +13,7 @@ const canvas = $('main-canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const wrapper = $('canvas-wrapper');
 const fileInput = $('file-input');
+const projectInput = $('project-input');
 const tipBar = $('tip-bar');
 const tipText = $('tip-text');
 const tipIcon = $('tip-icon');
@@ -31,19 +34,28 @@ const panels = {
 
 // ── State ────────────────────────────────────────────────
 let img = new Image();
+let imgDataURL = null;          // Keep original data URI for save/load
 let originalImageData = null;
 let currentPoints = [];
-let walls = [];          // { points[], mask, color, id }
+let walls = [];                 // { points[], mask, color, id }
 let activeWallIndex = -1;
 let scale = 1;
-let phase = 'SELECT';   // SELECT | RECOLOR
+let phase = 'SELECT';           // SELECT | RECOLOR
 let zoomLevel = 1.0;
-let interactionMode = 'DRAW';
+let interactionMode = 'DRAW';   // DRAW | PAN | MOVE
 
 // Compare
 let isCompareMode = false;
 let referenceImageData = null;
 let currentCompositeData = null;
+
+// Point dragging
+let dragPointInfo = null;        // { wallIdx, pointIdx } or { isCurrentPoly: true, pointIdx }
+const DRAG_RADIUS = 14;         // px radius to grab a point
+
+// Pinch zoom
+let initialPinchDist = null;
+let initialZoom = 1;
 
 // Categories
 const CATEGORIES = {
@@ -63,14 +75,13 @@ const catNames = Object.keys(CATEGORIES);
    1. WELCOME & IMAGE UPLOAD
    ═══════════════════════════════════════════════════════════ */
 
-// Choose File button
 $('btn-choose-file').addEventListener('click', () => fileInput.click());
-// New Image button inside app
 $('btn-new-image').addEventListener('click', () => fileInput.click());
 
 fileInput.addEventListener('change', e => {
     if (!e.target.files.length) return;
     loadImageFile(e.target.files[0]);
+    e.target.value = '';
 });
 
 // Drag & Drop
@@ -89,6 +100,7 @@ dropZone.addEventListener('drop', e => {
 function loadImageFile(file) {
     const reader = new FileReader();
     reader.onload = ev => {
+        imgDataURL = ev.target.result;
         img = new Image();
         img.onload = () => {
             welcomeScreen.classList.add('hidden');
@@ -97,7 +109,7 @@ function loadImageFile(file) {
             enterSelectPhase();
             toast('Image loaded — start outlining walls!');
         };
-        img.src = ev.target.result;
+        img.src = imgDataURL;
     };
     reader.readAsDataURL(file);
 }
@@ -130,9 +142,7 @@ function setStep(n) {
         if (i + 1 < n) p.classList.add('done');
         if (i + 1 === n) p.classList.add('active');
     });
-    cons.forEach((c, i) => {
-        c.classList.toggle('done', i + 1 < n);
-    });
+    cons.forEach((c, i) => { c.classList.toggle('done', i + 1 < n); });
 }
 
 function setTip(icon, text) {
@@ -144,66 +154,197 @@ function setTip(icon, text) {
 
 
 /* ═══════════════════════════════════════════════════════════
-   3. ZOOM & PAN
+   3. ZOOM & PAN + PINCH-TO-ZOOM
    ═══════════════════════════════════════════════════════════ */
 
 function updateZoom() {
     canvas.style.transformOrigin = '0 0';
     canvas.style.transform = `scale(${zoomLevel})`;
 }
+
 $('btn-zoom-in').addEventListener('click', () => { zoomLevel = Math.min(zoomLevel * 1.25, 5); updateZoom(); });
 $('btn-zoom-out').addEventListener('click', () => { zoomLevel = Math.max(zoomLevel / 1.25, 1); updateZoom(); });
 $('btn-zoom-reset').addEventListener('click', () => { zoomLevel = 1; updateZoom(); wrapper.scrollLeft = wrapper.scrollTop = 0; });
 
-modeToggle.addEventListener('click', () => setMode(interactionMode === 'DRAW' ? 'PAN' : 'DRAW'));
+modeToggle.addEventListener('click', () => {
+    // Cycle: DRAW → MOVE → PAN → DRAW
+    if (interactionMode === 'DRAW') setMode('MOVE');
+    else if (interactionMode === 'MOVE') setMode('PAN');
+    else setMode('DRAW');
+});
 
 function setMode(m) {
     interactionMode = m;
-    const isPan = m === 'PAN';
-    modeText.textContent = isPan ? 'Pan' : 'Draw';
-    modeIcon.textContent = isPan ? '✋' : '✏️';
-    modeToggle.classList.toggle('pan-active', isPan);
-    canvas.style.touchAction = wrapper.style.touchAction = isPan ? 'auto' : 'none';
-    canvas.style.cursor = isPan ? 'grab' : 'crosshair';
+    if (m === 'PAN') {
+        modeText.textContent = 'Pan'; modeIcon.textContent = '✋';
+        modeToggle.classList.add('pan-active'); modeToggle.classList.remove('move-active');
+        canvas.style.touchAction = wrapper.style.touchAction = 'auto';
+        canvas.style.cursor = 'grab';
+    } else if (m === 'MOVE') {
+        modeText.textContent = 'Move Pts'; modeIcon.textContent = '✥';
+        modeToggle.classList.remove('pan-active'); modeToggle.classList.add('move-active');
+        canvas.style.touchAction = wrapper.style.touchAction = 'none';
+        canvas.style.cursor = 'move';
+    } else {
+        modeText.textContent = 'Draw'; modeIcon.textContent = '✏️';
+        modeToggle.classList.remove('pan-active', 'move-active');
+        canvas.style.touchAction = wrapper.style.touchAction = 'none';
+        canvas.style.cursor = 'crosshair';
+    }
 }
 setMode('DRAW');
 
+// ── Pinch-to-zoom (mobile) ──────────────────────────────
+wrapper.addEventListener('touchstart', onPinchStart, { passive: false });
+wrapper.addEventListener('touchmove', onPinchMove, { passive: false });
+wrapper.addEventListener('touchend', onPinchEnd);
+
+function getPinchDist(e) {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
+function onPinchStart(e) {
+    if (e.touches.length === 2) {
+        e.preventDefault();
+        initialPinchDist = getPinchDist(e);
+        initialZoom = zoomLevel;
+    }
+}
+
+function onPinchMove(e) {
+    if (e.touches.length === 2 && initialPinchDist) {
+        e.preventDefault();
+        const dist = getPinchDist(e);
+        const ratio = dist / initialPinchDist;
+        zoomLevel = Math.max(1, Math.min(5, initialZoom * ratio));
+        updateZoom();
+    }
+}
+
+function onPinchEnd(e) {
+    if (e.touches.length < 2) { initialPinchDist = null; }
+}
+
 
 /* ═══════════════════════════════════════════════════════════
-   4. CANVAS INPUT
+   4. CANVAS INPUT (Draw + Move Points)
    ═══════════════════════════════════════════════════════════ */
 
-canvas.addEventListener('mousedown', onCanvasInput);
-canvas.addEventListener('touchstart', onCanvasInput, { passive: false });
+canvas.addEventListener('mousedown', onPointerDown);
+canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+canvas.addEventListener('mousemove', onPointerMove);
+canvas.addEventListener('touchmove', onPointerMove, { passive: false });
+canvas.addEventListener('mouseup', onPointerUp);
+canvas.addEventListener('touchend', onPointerUp);
 
-function onCanvasInput(e) {
-    if (interactionMode === 'PAN') return;
-    if (e.cancelable) e.preventDefault();
-
+function getCanvasXY(e) {
     const rect = canvas.getBoundingClientRect();
     const cx = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
     const cy = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-    const x = (cx - rect.left) * (canvas.width / rect.width);
-    const y = (cy - rect.top) * (canvas.height / rect.height);
+    return {
+        x: (cx - rect.left) * (canvas.width / rect.width),
+        y: (cy - rect.top) * (canvas.height / rect.height)
+    };
+}
+
+function getCanvasXYFromEnd(e) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const cy = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+    return {
+        x: (cx - rect.left) * (canvas.width / rect.width),
+        y: (cy - rect.top) * (canvas.height / rect.height)
+    };
+}
+
+function onPointerDown(e) {
+    if (interactionMode === 'PAN') return;
+    // Ignore multi-touch (pinch) — only handle single finger
+    if (e.touches && e.touches.length > 1) return;
+    if (e.cancelable) e.preventDefault();
+
+    const { x, y } = getCanvasXY(e);
     if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) return;
 
+    // ── MOVE mode: find nearest point to drag ──
+    if (interactionMode === 'MOVE') {
+        dragPointInfo = findNearestPoint(x, y);
+        return;
+    }
+
+    // ── DRAW mode ──
     if (phase === 'SELECT') {
         currentPoints.push({ x, y });
         renderSelection();
-
-        // Dynamic tips
         if (currentPoints.length === 1) setTip('📍', 'Great! Keep tapping corners around the wall.');
         if (currentPoints.length === 3) setTip('✅', 'You can tap "Close Shape" now, or keep adding points.');
     }
 
     if (phase === 'RECOLOR') {
-        // Hit-test walls
         for (let i = walls.length - 1; i >= 0; i--) {
             if (pointInPoly({ x, y }, walls[i].points)) {
-                selectWall(i);
-                return;
+                selectWall(i); return;
             }
         }
+    }
+}
+
+function onPointerMove(e) {
+    if (!dragPointInfo || interactionMode !== 'MOVE') return;
+    if (e.touches && e.touches.length > 1) return;
+    if (e.cancelable) e.preventDefault();
+    const { x, y } = getCanvasXY(e);
+    applyDrag(x, y);
+}
+
+function onPointerUp(e) {
+    if (dragPointInfo && interactionMode === 'MOVE') {
+        // If in recolor phase, regenerate mask for the moved wall
+        if (phase === 'RECOLOR' && dragPointInfo.wallIdx !== undefined) {
+            const w = walls[dragPointInfo.wallIdx];
+            w.mask = createMask(w.points);
+            renderRecolor();
+        }
+        dragPointInfo = null;
+    }
+}
+
+function findNearestPoint(x, y) {
+    let best = null, bestDist = DRAG_RADIUS;
+
+    // Check currentPoints (active polygon in SELECT phase)
+    if (phase === 'SELECT') {
+        currentPoints.forEach((p, pi) => {
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d < bestDist) { bestDist = d; best = { isCurrentPoly: true, pointIdx: pi }; }
+        });
+    }
+
+    // Check completed walls
+    walls.forEach((w, wi) => {
+        w.points.forEach((p, pi) => {
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d < bestDist) { bestDist = d; best = { wallIdx: wi, pointIdx: pi }; }
+        });
+    });
+
+    return best;
+}
+
+function applyDrag(x, y) {
+    if (!dragPointInfo) return;
+    // Clamp to canvas
+    x = Math.max(0, Math.min(canvas.width, x));
+    y = Math.max(0, Math.min(canvas.height, y));
+
+    if (dragPointInfo.isCurrentPoly) {
+        currentPoints[dragPointInfo.pointIdx] = { x, y };
+        renderSelection();
+    } else {
+        walls[dragPointInfo.wallIdx].points[dragPointInfo.pointIdx] = { x, y };
+        if (phase === 'SELECT') renderSelection();
+        else renderRecolor();
     }
 }
 
@@ -220,7 +361,7 @@ function enterSelectPhase() {
     isCompareMode = false;
 
     setStep(1);
-    setTip('✏️', 'Tap corners of a wall to outline it. Tap "Close Shape" when done with one wall.');
+    setTip('✏️', 'Tap corners of a wall to outline it. Tap "Close Shape" when done.');
 
     panels.select.classList.remove('hidden');
     panels.recolor.classList.add('hidden');
@@ -231,7 +372,6 @@ function enterSelectPhase() {
     panels.chips.classList.add('hidden');
     $('btn-compare-toggle').textContent = '⇔ Compare';
     setMode('DRAW');
-
     renderSelection();
 }
 
@@ -239,35 +379,44 @@ function renderSelection() {
     ctx.putImageData(originalImageData, 0, 0);
     ctx.lineCap = ctx.lineJoin = 'round';
 
-    // Completed walls (blue fill)
+    // Completed walls (blue fill + label)
     walls.forEach((w, i) => {
         fillPoly(w.points, 'rgba(0,209,255,0.12)', 'rgba(0,209,255,0.45)');
-        // Label
-        const cx = w.points.reduce((s, p) => s + p.x, 0) / w.points.length;
-        const cy = w.points.reduce((s, p) => s + p.y, 0) / w.points.length;
+        const cxp = w.points.reduce((s, p) => s + p.x, 0) / w.points.length;
+        const cyp = w.points.reduce((s, p) => s + p.y, 0) / w.points.length;
         ctx.font = '600 13px Inter, sans-serif';
         ctx.fillStyle = 'rgba(0,209,255,0.8)'; ctx.textAlign = 'center';
-        ctx.fillText(`Wall ${i + 1}`, cx, cy + 5);
+        ctx.fillText(`Wall ${i + 1}`, cxp, cyp + 5);
+        // Draw draggable points for completed walls
+        drawDraggablePoints(w.points, '#00d1ff');
     });
 
     // Active polygon being drawn (green)
     if (currentPoints.length > 0) {
         drawOutline(currentPoints, 'rgba(0,255,120,0.85)');
-        // Dashed close hint
         if (currentPoints.length > 2) {
             ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(255,255,0,0.5)'; ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.moveTo(currentPoints.at(-1).x, currentPoints.at(-1).y);
             ctx.lineTo(currentPoints[0].x, currentPoints[0].y); ctx.stroke(); ctx.setLineDash([]);
         }
-        // Dots
-        currentPoints.forEach(p => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255,80,80,.25)'; ctx.fill();
-            ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
-            ctx.fillStyle = '#ff4444'; ctx.fill();
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.stroke();
-        });
+        drawDraggablePoints(currentPoints, '#ff4444');
     }
+}
+
+function drawDraggablePoints(points, color) {
+    points.forEach(p => {
+        // Outer glow
+        ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = color.replace(')', ',0.2)').replace('rgb', 'rgba').replace('#', '');
+        // Use a simpler approach
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = color; ctx.fill();
+        ctx.globalAlpha = 1;
+        // Inner dot
+        ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    });
 }
 
 // Undo
@@ -307,7 +456,7 @@ $('btn-finish').addEventListener('click', () => {
 function enterRecolorPhase() {
     phase = 'RECOLOR';
     setStep(2);
-    setTip('🎨', 'Tap a wall (or a chip below) to select it, then pick a color!');
+    setTip('🎨', 'Tap a wall (or chip) to select it, then pick a color!');
 
     panels.select.classList.add('hidden');
     panels.recolor.classList.remove('hidden');
@@ -318,7 +467,8 @@ function enterRecolorPhase() {
 
     renderWallChips();
     renderPalette();
-    selectWall(0);
+    if (activeWallIndex >= 0) selectWall(activeWallIndex);
+    else selectWall(0);
 }
 
 function selectWall(i) {
@@ -326,13 +476,12 @@ function selectWall(i) {
     renderWallChips();
     renderRecolor();
     const w = walls[i];
-    const label = w.color ? `Wall ${i + 1} — current: ${w.color}` : `Wall ${i + 1} — no color yet`;
+    const label = w.color ? `Wall ${i + 1} — ${w.color}` : `Wall ${i + 1} — no color yet`;
     setTip('👆', label + '. Pick a color below!');
 }
 
 function renderWallChips() {
-    const c = panels.chips;
-    c.innerHTML = '';
+    const c = panels.chips; c.innerHTML = '';
     walls.forEach((w, i) => {
         const chip = document.createElement('button');
         chip.className = 'wall-chip' + (i === activeWallIndex ? ' active' : '');
@@ -350,16 +499,16 @@ $('btn-back').addEventListener('click', () => {
     toast('Selection reset — re-outline your walls.');
 });
 
-// Save
+// Save Image
 $('btn-save').addEventListener('click', () => {
-    renderRecolor(false); // Clean render (no glow)
+    renderRecolor(false);
     setStep(3);
     const a = document.createElement('a');
     a.download = 'roompaint_design.jpg';
     a.href = canvas.toDataURL('image/jpeg', 0.92);
     a.click();
     toast('Image saved! 🎉');
-    renderRecolor(); // Re-add glow
+    renderRecolor();
 });
 
 
@@ -378,8 +527,7 @@ $('btn-compare-toggle').addEventListener('click', () => {
     } else {
         btn.textContent = '⇔ Compare';
         panels.compare.classList.add('hidden');
-        canvas.width = originalImageData.width;
-        canvas.height = originalImageData.height;
+        canvas.width = originalImageData.width; canvas.height = originalImageData.height;
         renderRecolor();
     }
 });
@@ -401,10 +549,8 @@ function renderCompare() {
     canvas.width = w * 2; canvas.height = h;
     ctx.putImageData(referenceImageData, 0, 0);
     ctx.putImageData(currentCompositeData, w, 0);
-    // Divider
     ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 2;
     ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(w, 0); ctx.lineTo(w, h); ctx.stroke(); ctx.setLineDash([]);
-    // Labels
     ctx.font = "600 18px 'Inter',sans-serif"; ctx.fillStyle = '#fff';
     ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 5;
     ctx.fillText('Reference', 14, 32); ctx.fillText('Active', w + 14, 32); ctx.shadowBlur = 0;
@@ -420,14 +566,11 @@ $('btn-next-cat').addEventListener('click', () => { currentCatIdx = (currentCatI
 
 function renderPalette() {
     $('current-category').textContent = catNames[currentCatIdx];
-    const c = $('color-container');
-    c.innerHTML = '';
+    const c = $('color-container'); c.innerHTML = '';
     CATEGORIES[catNames[currentCatIdx]].forEach(([name, hex]) => {
         const d = document.createElement('div');
-        d.className = 'swatch';
-        d.style.backgroundColor = hex;
-        d.setAttribute('data-name', name);
-        d.title = name;
+        d.className = 'swatch'; d.style.backgroundColor = hex;
+        d.setAttribute('data-name', name); d.title = name;
         d.onclick = () => {
             c.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
             d.classList.add('selected');
@@ -483,6 +626,8 @@ function renderRecolor(showGlow = true) {
         ctx.beginPath(); ctx.moveTo(w.points[0].x, w.points[0].y);
         w.points.forEach(p => ctx.lineTo(p.x, p.y));
         ctx.closePath(); ctx.stroke(); ctx.restore();
+        // Draw draggable points in recolor phase too (for MOVE mode)
+        drawDraggablePoints(w.points, '#00ffea');
     }
 }
 
@@ -558,32 +703,35 @@ function toast(msg, ms = 2500) {
 
 /* ═══════════════════════════════════════════════════════════
    11. SAVE / LOAD PROJECT (.roompaint)
-   ═══════════════════════════════════════════════════════════ */
 
-const projectInput = $('project-input');
+   FIX: Points are stored as NORMALIZED (0-1) coordinates
+   relative to image dimensions so they scale correctly
+   regardless of browser window size on load.
+   ═══════════════════════════════════════════════════════════ */
 
 // Wire up buttons
 $('btn-save-project').addEventListener('click', saveProject);
 $('btn-load-project').addEventListener('click', () => projectInput.click());
 $('btn-load-project-welcome').addEventListener('click', () => projectInput.click());
+$('btn-load-project-select').addEventListener('click', () => projectInput.click());
 projectInput.addEventListener('change', e => {
     if (!e.target.files.length) return;
-    loadProject(e.target.files[0]);
-    e.target.value = ''; // allow re-selecting same file
+    loadProjectFile(e.target.files[0]);
+    e.target.value = '';
 });
 
 function saveProject() {
-    // Build a lightweight JSON bundle
+    // Normalize points to 0-1 range relative to canvas dimensions
+    const cw = canvas.width, ch = canvas.height;
+
     const project = {
-        version: 1,
-        image: img.src, // data URI of original image
-        canvasWidth: canvas.width,
-        canvasHeight: canvas.height,
-        scale: scale,
+        version: 2,
+        image: imgDataURL,      // original uploaded image data URI
         walls: walls.map(w => ({
             id: w.id,
-            points: w.points,   // [{x, y}, ...]
-            color: w.color      // hex string or null
+            // Store normalized points (0–1)
+            normPoints: w.points.map(p => ({ nx: p.x / cw, ny: p.y / ch })),
+            color: w.color
         }))
     };
 
@@ -597,14 +745,13 @@ function saveProject() {
     toast('Project saved! Load it anytime to continue. 📂');
 }
 
-function loadProject(file) {
+function loadProjectFile(file) {
     const reader = new FileReader();
     reader.onload = ev => {
         try {
             const project = JSON.parse(ev.target.result);
             if (!project.image || !project.walls) {
-                toast('Invalid project file!');
-                return;
+                toast('Invalid project file!'); return;
             }
             restoreProject(project);
         } catch (err) {
@@ -616,26 +763,43 @@ function loadProject(file) {
 }
 
 function restoreProject(project) {
+    imgDataURL = project.image;
     img = new Image();
     img.onload = () => {
-        // Show app
         welcomeScreen.classList.add('hidden');
         appContainer.classList.remove('hidden');
-
-        // Init canvas
         initCanvas();
 
-        // Restore walls (points + colors, regenerate masks)
-        walls = project.walls.map(w => ({
-            id: w.id || Date.now() + Math.random(),
-            points: w.points,
-            color: w.color,
-            mask: createMask(w.points) // regenerate from polygon
-        }));
+        const cw = canvas.width, ch = canvas.height;
+
+        walls = project.walls.map(w => {
+            // Convert normalized points back to canvas coordinates
+            let pts;
+            if (w.normPoints) {
+                // Version 2 format (normalized)
+                pts = w.normPoints.map(np => ({ x: np.nx * cw, y: np.ny * ch }));
+            } else if (w.points) {
+                // Version 1 fallback (raw coords) — try to scale if canvas/scale info available
+                if (project.canvasWidth && project.canvasHeight) {
+                    const sx = cw / project.canvasWidth;
+                    const sy = ch / project.canvasHeight;
+                    pts = w.points.map(p => ({ x: p.x * sx, y: p.y * sy }));
+                } else {
+                    pts = w.points;
+                }
+            }
+
+            return {
+                id: w.id || Date.now() + Math.random(),
+                points: pts,
+                color: w.color,
+                mask: createMask(pts)
+            };
+        });
 
         activeWallIndex = 0;
         enterRecolorPhase();
         toast(`Project loaded — ${walls.length} wall(s) restored! 🎨`);
     };
-    img.src = project.image;
+    img.src = imgDataURL;
 }
